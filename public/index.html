@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calendar Real-Time Visualizer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Lato:wght@100;300&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Lato', sans-serif;
+      font-weight: 300;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: #f0f0f0;
+      transition: background-color 0.5s ease;
+    }
+    
+    #eventName {
+      font-family: 'Lato', sans-serif;
+      font-weight: 300;
+      font-size: 4rem;
+      color: white;
+      text-align: center;
+      padding: 0 20px;
+      max-width: 90%;
+      z-index: 10;
+    }
+    
+    #noEvent {
+      font-size: 2rem;
+      color: white;
+      text-align: center;
+    }
+    
+    #timeInfo {
+      font-family: 'Lato', sans-serif;
+      font-weight: 300;
+      margin-top: 20px;
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.8);
+      z-index: 10;
+    }
+    
+    #overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 0%;
+      background: rgba(255, 255, 255, 0.3);
+      transition: height 1s linear;
+      z-index: 5;
+    }
+    
+    #timeDot {
+      position: absolute;
+      min-width: 60px;
+      height: 24px;
+      background-color: rgba(0, 0, 0, 0.7);
+      border-radius: 12px;
+      z-index: 15;
+      transform: translate(-50%, -50%);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 0 8px;
+      padding-top: 4px;
+      font-family: 'Lato', sans-serif;
+      font-weight: 300;
+      font-size: 0.9rem;
+      color: white;
+      line-height: 1;
+      text-align: center;
+    }
+    
+    #timeLine {
+      position: absolute;
+      height: 1px;
+      background-color: black;
+      left: 0;
+      z-index: 14;
+      transform: translateY(-50%);
+    }
+    
+    #minutesElapsed {
+      font-family: 'Lato', sans-serif;
+      font-weight: 250;
+      position: fixed;
+      bottom: 20px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-size: 0.9rem;
+      color: black;
+      z-index: 10;
+    }
+    
+    #minutesElapsed::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 30px;
+      height: 30px;
+      border: 0.5px solid black;
+      border-radius: 50%;
+    }
+    
+    #minutesRemaining {
+      font-family: 'Lato', sans-serif;
+      font-weight: 250;
+      position: fixed;
+      top: 20px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-size: 0.9rem;
+      color: black;
+      z-index: 10;
+    }
+    
+    #minutesRemaining::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 30px;
+      height: 30px;
+      border: 0.5px solid black;
+      border-radius: 50%;
+    }
+    
+    #auth {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 20px;
+      text-decoration: none;
+      color: #333;
+      font-weight: bold;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <a id="auth" href="/auth/google">Connect Google Calendar</a>
+  
+  <div id="minutesRemaining"></div>
+  <div id="eventName"></div>
+  <div id="timeInfo"></div>
+  <div id="noEvent" style="display: none;">No current event</div>
+  <div id="minutesElapsed"></div>
+  
+  <div id="overlay"></div>
+  <div id="timeDot"></div>
+  <div id="timeLine"></div>
+  
+  <script src="app.js"></script>
+</body>
+</html> 
