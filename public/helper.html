@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calendar App Setup Helper</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      margin: 0;
+      padding: 20px;
+      background-color: #f7f9fc;
+      color: #333;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #e1e8ed;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #3498db;
+      margin-top: 30px;
+    }
+    code {
+      background-color: #f1f5f9;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    pre {
+      background-color: #f1f5f9;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .step {
+      margin-bottom: 20px;
+      padding: 15px;
+      background-color: #fff;
+      border-left: 4px solid #3498db;
+      border-radius: 0 5px 5px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .warning {
+      background-color: #fff3cd;
+      border-left-color: #ffc107;
+    }
+    .btn {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .debug-box {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f8f9fa;
+      border-radius: 5px;
+      border: 1px solid #dee2e6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Calendar App Setup Helper</h1>
+    
+    <p>This page will help you set up and debug your Google Calendar integration.</p>
+    
+    <h2>1. Check Environment</h2>
+    <div class="step">
+      <p>First, let's check your environment configuration:</p>
+      <button class="btn" onclick="checkEnvironment()">Check Environment</button>
+      <div id="environment-results" class="debug-box" style="display: none;"></div>
+    </div>
+    
+    <h2>2. Check Your Cookies</h2>
+    <div class="step">
+      <p>Let's see what cookies are currently set:</p>
+      <button class="btn" onclick="checkCookies()">Check Cookies</button>
+      <div id="cookie-results" class="debug-box" style="display: none;"></div>
+    </div>
+    
+    <h2>3. Check Session Status</h2>
+    <div class="step">
+      <p>Check if your session is working correctly:</p>
+      <button class="btn" onclick="checkSession()">Check Session</button>
+      <div id="session-results" class="debug-box" style="display: none;"></div>
+    </div>
+    
+    <h2>Common Problems & Solutions</h2>
+    
+    <div class="step warning">
+      <h3>Domain Mismatch</h3>
+      <p>Your OAuth flow must start and end on the same domain.</p>
+      <p><strong>Solution:</strong> Make sure your REDIRECT_URI environment variable matches exactly where Google is redirecting:</p>
+      <code>REDIRECT_URI=https://yourdomain.vercel.app/auth/redirect</code>
+      <p>And ensure this same URL is registered in your Google OAuth credentials.</p>
+    </div>
+    
+    <div class="step warning">
+      <h3>Cookies Not Working</h3>
+      <p>Session cookies must work properly for authentication.</p>
+      <p><strong>Solution:</strong> Try these options:</p>
+      <ul>
+        <li>Ensure you're using HTTPS</li>
+        <li>Clear browser cookies and try again</li>
+        <li>Try a different browser</li>
+      </ul>
+    </div>
+    
+    <h2>Manual Authentication Flow</h2>
+    <div class="step">
+      <p>Try the authentication flow step by step:</p>
+      <ol>
+        <li>Start the OAuth flow: <a href="/auth/google" target="_blank">/auth/google</a></li>
+        <li>After Google redirects, check your session: <a href="/debug" target="_blank">/debug</a></li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    async function checkEnvironment() {
+      const resultBox = document.getElementById('environment-results');
+      resultBox.innerHTML = 'Loading...';
+      resultBox.style.display = 'block';
+      
+      try {
+        const response = await fetch('/debug');
+        const data = await response.json();
+        
+        resultBox.innerHTML = `
+          <h3>Environment Check</h3>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+          
+          <h4>Analysis:</h4>
+          <ul>
+            <li>Environment: ${data.env.NODE_ENV || 'Not set'}</li>
+            <li>Redirect URI configured: ${data.env.hasRedirectUri ? '✅ Yes' : '❌ No'}</li>
+            <li>Upstash Redis connected: ${data.upstash ? '✅ Yes' : '❌ No'}</li>
+          </ul>
+        `;
+      } catch (error) {
+        resultBox.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    }
+    
+    function checkCookies() {
+      const resultBox = document.getElementById('cookie-results');
+      resultBox.style.display = 'block';
+      
+      const cookies = document.cookie.split(';')
+        .map(cookie => cookie.trim())
+        .reduce((acc, cookie) => {
+          const [name, value] = cookie.split('=');
+          acc[name] = value;
+          return acc;
+        }, {});
+      
+      resultBox.innerHTML = `
+        <h3>Browser Cookies</h3>
+        <pre>${JSON.stringify(cookies, null, 2)}</pre>
+        
+        <h4>Analysis:</h4>
+        <ul>
+          <li>Session cookie found: ${cookies.sessionId ? '✅ Yes' : '❌ No'}</li>
+          <li>Auth debug cookie: ${cookies.auth_debug ? '✅ Yes' : '❌ No'}</li>
+        </ul>
+      `;
+    }
+    
+    async function checkSession() {
+      const resultBox = document.getElementById('session-results');
+      resultBox.innerHTML = 'Loading...';
+      resultBox.style.display = 'block';
+      
+      try {
+        const response = await fetch('/current-event', {
+          credentials: 'include'
+        });
+        
+        resultBox.innerHTML = `
+          <h3>Session Status</h3>
+          <p>Status code: ${response.status}</p>
+        `;
+        
+        if (response.ok) {
+          const data = await response.json();
+          resultBox.innerHTML += `
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+            <p>✅ Your session is working correctly!</p>
+          `;
+        } else {
+          resultBox.innerHTML += `
+            <p>❌ Session error: ${response.statusText}</p>
+            <p>This likely means you're not authenticated or your session has expired.</p>
+            <p>Try the <a href="/auth/google">authentication flow</a> again.</p>
+          `;
+        }
+      } catch (error) {
+        resultBox.innerHTML = `<p>Error: ${error.message}</p>`;
+      }
+    }
+  </script>
+</body>
+</html> 

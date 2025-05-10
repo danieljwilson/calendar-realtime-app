@@ -132,21 +132,22 @@ app.get('/auth/google', (req, res) => {
   }
 });
 
-// OAuth callback
+// OAuth redirect handler with cross-domain support
 app.get('/auth/redirect', async (req, res) => {
   const { code, state } = req.query;
   
   console.log('Redirect received:', { 
     stateFromGoogle: state,
     sessionIdFromCookie: req.sessionId,
-    cookies: req.cookies
+    cookies: req.cookies,
+    host: req.headers.host
   });
   
   if (!code) {
     return res.status(400).send('Invalid authentication request: No code provided');
   }
   
-  // If we don't have a sessionId cookie but Google sent a state, use that state as our sessionId
+  // Special handling for domain mismatch
   if (state && (!req.sessionId || state !== req.sessionId)) {
     console.log('Session mismatch - using state from Google as sessionId');
     req.sessionId = state;
@@ -290,6 +291,22 @@ app.get('/current-event', async (req, res) => {
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', redis: !!redisClient });
+});
+
+// Add a health/debug endpoint
+app.get('/debug', (req, res) => {
+  res.json({
+    cookies: req.cookies,
+    sessionId: req.sessionId,
+    sessionExists: !!req.session,
+    host: req.headers.host,
+    upstash: !!redisClient,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      hasRedirectUri: !!process.env.REDIRECT_URI,
+      redirectUri: process.env.REDIRECT_URI,
+    }
+  });
 });
 
 // For local development
