@@ -12,6 +12,7 @@ const timeLineEl = document.getElementById('timeLine');
 // Session management
 let currentEvent = null;
 let updateInterval = null;
+let authError = false;
 
 // Format time as HH:MM in 24-hour format
 function formatTime(date) {
@@ -142,23 +143,75 @@ function updateEventDisplay() {
   }
 }
 
+// Display error message
+function showError(message) {
+  const errorEl = document.createElement('div');
+  errorEl.style.position = 'fixed';
+  errorEl.style.top = '10px';
+  errorEl.style.left = '10px';
+  errorEl.style.right = '10px';
+  errorEl.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
+  errorEl.style.color = 'white';
+  errorEl.style.padding = '10px';
+  errorEl.style.borderRadius = '5px';
+  errorEl.style.zIndex = '100';
+  errorEl.textContent = message;
+  
+  // Add a close button
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'x';
+  closeBtn.style.float = 'right';
+  closeBtn.style.background = 'none';
+  closeBtn.style.border = 'none';
+  closeBtn.style.color = 'white';
+  closeBtn.style.cursor = 'pointer';
+  closeBtn.onclick = () => errorEl.remove();
+  errorEl.prepend(closeBtn);
+  
+  document.body.appendChild(errorEl);
+}
+
+// Check for error parameter in URL
+function checkForErrors() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const errorParam = urlParams.get('error');
+  
+  if (errorParam) {
+    showError(`Authentication error: ${errorParam}`);
+    // Remove the error parameter from URL
+    urlParams.delete('error');
+    const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+    window.history.replaceState({}, document.title, newUrl);
+  }
+}
+
 // Fetch the current event from the API
 async function fetchCurrentEvent() {
   try {
+    console.log('Fetching current event...');
+    
     const response = await fetch('/current-event', {
       credentials: 'include' // Important: include cookies in the request
     });
+    
+    console.log('Response status:', response.status);
     
     if (!response.ok) {
       if (response.status === 401) {
         // Auth expired, show reconnect button
         authEl.style.display = 'block';
+        
+        if (!authError) {
+          showError('Authentication required or expired. Please connect your Google Calendar.');
+          authError = true;
+        }
         return;
       }
       throw new Error(`API error: ${response.status}`);
     }
     
     const data = await response.json();
+    console.log('Current event data:', data.currentEvent ? 'Event found' : 'No current event');
     
     // Update global state
     currentEvent = data.currentEvent;
@@ -168,14 +221,21 @@ async function fetchCurrentEvent() {
     
     // If authenticated, hide the auth button
     authEl.style.display = currentEvent ? 'none' : 'block';
+    authError = false;
     
   } catch (error) {
     console.error('Error fetching current event:', error);
+    showError(`Error: ${error.message}`);
   }
 }
 
 // Initialize the app
 function init() {
+  console.log('Initializing app...');
+  
+  // Check for errors in URL
+  checkForErrors();
+  
   // Initial fetch
   fetchCurrentEvent();
   

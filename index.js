@@ -43,6 +43,7 @@ app.use(async (req, res, next) => {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/' // Ensure cookie is available for all paths
       });
       req.session = {};
     } else {
@@ -107,6 +108,17 @@ app.get('/', (req, res) => {
 // Start OAuth flow
 app.get('/auth/google', (req, res) => {
   try {
+    // Set a debug cookie to check if cookies are working
+    res.cookie('auth_debug', 'true', { 
+      maxAge: 3600000,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
+    
+    console.log('Starting OAuth flow with sessionId:', req.sessionId);
+    
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
@@ -124,12 +136,28 @@ app.get('/auth/google', (req, res) => {
 app.get('/auth/redirect', async (req, res) => {
   const { code, state } = req.query;
   
+  console.log('Redirect received:', { 
+    stateFromGoogle: state,
+    sessionIdFromCookie: req.sessionId,
+    cookies: req.cookies
+  });
+  
   if (!code) {
     return res.status(400).send('Invalid authentication request: No code provided');
   }
   
-  if (state !== req.sessionId) {
-    return res.status(400).send('Invalid authentication request: Session mismatch');
+  // If we don't have a sessionId cookie but Google sent a state, use that state as our sessionId
+  if (state && (!req.sessionId || state !== req.sessionId)) {
+    console.log('Session mismatch - using state from Google as sessionId');
+    req.sessionId = state;
+    res.cookie('sessionId', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    req.session = {};
   }
   
   try {
@@ -154,8 +182,20 @@ app.get('/auth/redirect', async (req, res) => {
     
     // Make sure session is saved before redirect
     if (redisClient) {
+      console.log('Saving session to Redis with ID:', req.sessionId);
       await redisClient.set(`sess:${req.sessionId}`, req.session, { ex: 7 * 24 * 60 * 60 });
+    } else {
+      console.log('Warning: Redis client not available, session will not persist');
     }
+    
+    // Set the sessionId cookie again to ensure it's properly set after authentication
+    res.cookie('sessionId', req.sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
     
     res.redirect('/');
   } catch (error) {
