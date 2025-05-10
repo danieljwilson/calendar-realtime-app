@@ -9,12 +9,20 @@ const cookieParser = require('cookie-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Upstash Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+// Initialize Upstash Redis client - only once per cold start
+let redisClient;
+try {
+  redisClient = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    automaticDeserialization: true,
+  });
+} catch (error) {
+  console.error('Failed to initialize Upstash Redis client:', error);
+  // Continue without crashing - we'll handle errors in the handlers
+}
 
+// Setup middleware
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static('public'));
@@ -26,30 +34,56 @@ function generateSessionId() {
 
 // Middleware: Load session from Upstash
 app.use(async (req, res, next) => {
-  let sessionId = req.cookies.sessionId;
-  if (!sessionId) {
-    sessionId = generateSessionId();
-    res.cookie('sessionId', sessionId, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+  try {
+    let sessionId = req.cookies.sessionId;
+    if (!sessionId) {
+      sessionId = generateSessionId();
+      res.cookie('sessionId', sessionId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+      req.session = {};
+    } else {
+      try {
+        if (!redisClient) {
+          req.session = {};
+        } else {
+          const data = await redisClient.get(`sess:${sessionId}`);
+          req.session = data || {};
+        }
+      } catch (error) {
+        console.error('Failed to get session from Redis:', error);
+        req.session = {};
+      }
+    }
+    req.sessionId = sessionId;
+    next();
+  } catch (error) {
+    console.error('Session middleware error:', error);
     req.session = {};
-  } else {
-    req.session = (await redis.get(`sess:${sessionId}`)) || {};
+    req.sessionId = generateSessionId();
+    next();
   }
-  req.sessionId = sessionId;
-  next();
 });
 
 // Middleware: Save session to Upstash after response
 app.use((req, res, next) => {
-  res.on('finish', async () => {
-    if (req.sessionId && req.session) {
-      await redis.set(`sess:${req.sessionId}`, req.session, { ex: 7 * 24 * 60 * 60 }); // 7 days
+  const originalEnd = res.end;
+  
+  res.end = async function(chunk, encoding) {
+    try {
+      if (req.sessionId && req.session && redisClient) {
+        await redisClient.set(`sess:${req.sessionId}`, req.session, { ex: 7 * 24 * 60 * 60 }); // 7 days
+      }
+    } catch (error) {
+      console.error('Failed to save session to Redis:', error);
     }
-  });
+    
+    originalEnd.call(res, chunk, encoding);
+  };
+  
   next();
 });
 
@@ -72,39 +106,61 @@ app.get('/', (req, res) => {
 
 // Start OAuth flow
 app.get('/auth/google', (req, res) => {
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: SCOPES,
-    prompt: 'consent',
-    state: req.sessionId
-  });
-  res.redirect(authUrl);
+  try {
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent',
+      state: req.sessionId
+    });
+    res.redirect(authUrl);
+  } catch (error) {
+    console.error('OAuth URL generation error:', error);
+    res.status(500).send('Authentication failed - could not generate auth URL');
+  }
 });
 
 // OAuth callback
 app.get('/auth/redirect', async (req, res) => {
   const { code, state } = req.query;
-  if (!code || state !== req.sessionId) {
-    return res.status(400).send('Invalid authentication request');
+  
+  if (!code) {
+    return res.status(400).send('Invalid authentication request: No code provided');
   }
+  
+  if (state !== req.sessionId) {
+    return res.status(400).send('Invalid authentication request: Session mismatch');
+  }
+  
   try {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
+    
+    // Store in session
     req.session.tokens = tokens;
     req.session.authenticated = true;
+    
     // Get available calendars
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     const calendarList = await calendar.calendarList.list();
+    
     const selectedCalendars = calendarList.data.items.map(cal => ({
       id: cal.id,
       summary: cal.summary,
       backgroundColor: cal.backgroundColor
     }));
+    
     req.session.selectedCalendars = selectedCalendars;
+    
+    // Make sure session is saved before redirect
+    if (redisClient) {
+      await redisClient.set(`sess:${req.sessionId}`, req.session, { ex: 7 * 24 * 60 * 60 });
+    }
+    
     res.redirect('/');
   } catch (error) {
     console.error('OAuth error:', error);
-    res.status(500).send('Authentication failed');
+    res.status(500).send(`Authentication failed: ${error.message}`);
   }
 });
 
@@ -113,38 +169,52 @@ app.get('/current-event', async (req, res) => {
   if (!req.session.authenticated || !req.session.tokens) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
+  
   try {
     oauth2Client.setCredentials(req.session.tokens);
+    
     const selectedCalendars = req.session.selectedCalendars || [];
     if (selectedCalendars.length === 0) {
       return res.status(400).json({ error: 'No calendars selected' });
     }
+    
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     const now = new Date();
+    
     let currentEvent = null;
     let calendarColor = null;
+    
     for (const cal of selectedCalendars) {
-      const events = await calendar.events.list({
-        calendarId: cal.id,
-        timeMin: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
-        timeMax: new Date(now.getTime() + 1000 * 60 * 60).toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime'
-      });
-      const runningEvent = events.data.items.find(event => {
-        const start = new Date(event.start.dateTime || `${event.start.date}T00:00:00`);
-        const end = new Date(event.end.dateTime || `${event.end.date}T23:59:59`);
-        return start <= now && end >= now;
-      });
-      if (runningEvent) {
-        currentEvent = runningEvent;
-        calendarColor = cal.backgroundColor;
-        break;
+      try {
+        const events = await calendar.events.list({
+          calendarId: cal.id,
+          timeMin: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
+          timeMax: new Date(now.getTime() + 1000 * 60 * 60).toISOString(),
+          singleEvents: true,
+          orderBy: 'startTime'
+        });
+        
+        const runningEvent = events.data.items.find(event => {
+          const start = new Date(event.start.dateTime || `${event.start.date}T00:00:00`);
+          const end = new Date(event.end.dateTime || `${event.end.date}T23:59:59`);
+          return start <= now && end >= now;
+        });
+        
+        if (runningEvent) {
+          currentEvent = runningEvent;
+          calendarColor = cal.backgroundColor;
+          break;
+        }
+      } catch (calError) {
+        console.error(`Error fetching calendar ${cal.id}:`, calError);
+        // Continue to next calendar
       }
     }
+    
     if (!currentEvent) {
       return res.json({ currentEvent: null });
     }
+    
     res.json({
       currentEvent: {
         summary: currentEvent.summary,
@@ -155,24 +225,39 @@ app.get('/current-event', async (req, res) => {
     });
   } catch (error) {
     console.error('Calendar API error:', error);
+    
     if (error.code === 401 && req.session.tokens.refresh_token) {
       try {
         const { tokens } = await oauth2Client.refreshToken(req.session.tokens.refresh_token);
         req.session.tokens = tokens;
+        
+        // Save updated tokens
+        if (redisClient) {
+          await redisClient.set(`sess:${req.sessionId}`, req.session, { ex: 7 * 24 * 60 * 60 });
+        }
+        
         return res.status(401).json({ error: 'Token refreshed, please try again' });
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError);
         return res.status(401).json({ error: 'Authentication expired' });
       }
     }
+    
     res.status(500).json({ error: 'Failed to fetch calendar data' });
   }
 });
 
+// Health check endpoint for Vercel
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok', redis: !!redisClient });
+});
+
+// For local development
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-module.exports = app; // For Vercel 
+// For Vercel
+module.exports = app; 
