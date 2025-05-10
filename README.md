@@ -5,7 +5,7 @@ A web application that shows your currently running Google Calendar event on a f
 ## Features
 
 - OAuth2 authentication with Google Calendar API
-- Secure session management with Redis
+- **Serverless-friendly session management with Upstash Redis**
 - Persistent login across browser sessions
 - Displays the currently active calendar event with its name and time
 - Visual progress bar that fills in real-time as the event progresses
@@ -18,7 +18,7 @@ A web application that shows your currently running Google Calendar event on a f
 
 - Node.js (v16 or later)
 - npm
-- Redis server (for session storage)
+- [Upstash Redis](https://upstash.com/) account (for session storage)
 - Google Cloud Platform account with Calendar API enabled
 
 ### Environment Variables
@@ -35,15 +35,15 @@ REDIRECT_URI=http://localhost:3000/auth/redirect
 PORT=3000
 NODE_ENV=development
 
-# Session
-SESSION_SECRET=your_secure_random_string
-REDIS_URL=redis://localhost:6379
+# Upstash Redis (get these from your Upstash dashboard)
+UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 ```
 
 For production, set:
 - `NODE_ENV=production`
 - `REDIRECT_URI=https://your-domain.com/auth/redirect`
-- `REDIS_URL=your_redis_url` (from your Redis provider)
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from your Upstash dashboard
 
 ### Google API Setup
 
@@ -64,23 +64,12 @@ For production, set:
    ```bash
    npm install
    ```
-3. Start Redis server (if not already running):
+3. Start the application:
    ```bash
-   # macOS with Homebrew
-   brew services start redis
-   
-   # Linux
-   sudo service redis-server start
-   
-   # Windows
-   # Download and install Redis from https://github.com/microsoftarchive/redis/releases
+   npm start
    ```
-4. Start the application:
-   ```bash
-   npm run dev
-   ```
-5. Open `http://localhost:3000` in your browser
-6. Click "Connect Google Calendar" to authenticate
+4. Open `http://localhost:3000` in your browser
+5. Click "Connect Google Calendar" to authenticate
 
 ## Deployment
 
@@ -93,41 +82,14 @@ For production, set:
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
    - `REDIRECT_URI` (your-vercel-domain.vercel.app/auth/redirect)
-   - `SESSION_SECRET` (generate a secure random string)
-   - `REDIS_URL` (from Upstash)
-   - `NODE_ENV=production`
-5. Deploy
-
-### Heroku + Redis Cloud
-
-1. Fork this repository
-2. Create a Redis database on [Redis Cloud](https://redis.com/try-free/)
-3. Connect your fork to Heroku
-4. Add the Redis Cloud add-on to your Heroku app
-5. Add environment variables in the Heroku project settings:
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
-   - `REDIRECT_URI` (your-heroku-domain.herokuapp.com/auth/redirect)
-   - `SESSION_SECRET` (generate a secure random string)
-   - `NODE_ENV=production`
-6. Deploy
-
-### Railway + Redis
-
-1. Fork this repository
-2. Create a new project on [Railway](https://railway.app/)
-3. Add a Redis service to your project
-4. Add environment variables in the Railway project settings:
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_CLIENT_SECRET`
-   - `REDIRECT_URI` (your-railway-domain.railway.app/auth/redirect)
-   - `SESSION_SECRET` (generate a secure random string)
+   - `UPSTASH_REDIS_REST_URL` (from Upstash)
+   - `UPSTASH_REDIS_REST_TOKEN` (from Upstash)
    - `NODE_ENV=production`
 5. Deploy
 
 ## Security Considerations
 
-- Session data is stored in Redis with secure, HTTP-only cookies
+- Session data is stored in Upstash Redis with secure, HTTP-only cookies
 - OAuth tokens are never exposed to the client
 - HTTPS is enforced in production
 - Session cookies are secure and SameSite=Lax
